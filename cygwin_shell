@@ -1,0 +1,86 @@
+#!/bin/bash
+
+echo -e "$0: Cygwin shell script for automatic build environment\n"
+
+# Get all parameters
+executable="$1"
+remotehost="$2"
+builduser="$3"
+version2create="$4"
+revision2checkout="$MM_REVISION" 
+
+if [ $# -lt 3 ] ; then
+	echo -e "Expected at least 3 arguments: $0 executable remotehost builduser\n"
+	exit 100
+fi
+
+echo "System Information:"
+if test -z "$HOSTNAME" ; then
+	HOSTNAME=$(hostname)
+fi
+echo "Host:     $HOSTNAME"
+if test -z "$USERDNSDOMAIN" ; then
+	USERDNSDOMAIN=$(dnsdomainname)
+fi 2> /dev/null
+echo "Domain:   $USERDNSDOMAIN"
+echo "OSTYPE:   $OSTYPE"
+echo "MachType: $MACHTYPE"
+if test -z "$USERNAME" ; then
+	USERNAME=$USER
+fi
+echo -e "User:     $USERNAME\n"   
+ 
+# Get the local share directory from CYGWINSHARE environment variable
+localshare="$(pwd)/$CYGWINSHARE"
+#echo -e "Getting shared files from $localshare"
+#ls -als $localshare
+
+if [ -f "$localshare/administrate" ] ; then
+	mv "$localshare/administrate" ~/
+	echo "Performing CYGWIN administration on $HOSTNAME"
+	. ~/administrate
+	rm ~/administrate
+fi
+
+jobdir="~/tmp/"$HOSTNAME"_job"$$""
+jobname="${executable##*/}" 
+jobresults="$jobdir/results"
+echo -e "\nCopying script \"$executable\" to $remotehost:$jobdir/$jobname"
+ssh -o BatchMode=yes -o HostbasedAuthentication=yes "$builduser@$remotehost" "mkdir $jobdir && mkdir $jobresults"
+if scp -B -o HostbasedAuthentication=yes "$executable" "$builduser@$remotehost:$jobdir/$jobname" ; then
+	echo "Copied successfully"
+else	
+	echo -e "\n$0: Failed to copy the script; exiting!\n"
+	exit 101
+fi 
+
+if [ -z "$version2create" ] ; then
+	version2create="0.00.00"
+fi
+
+if [ -z "$revision2checkout" ] ; then
+	revision2checkout="HEAD"
+fi
+
+echo -e "\n$0: Starting script \"$executable\" ...\n"
+ssh -o BatchMode=yes -o HostbasedAuthentication=yes "$builduser@$remotehost" "bash $jobdir/$jobname $revision2checkout $version2create"
+returncode=$?                                        
+
+if [ "$returncode" = 0 ] ; then
+	echo -e "\n$0: Script \"$executable\" executed successfully"
+else
+	echo -e "\n$0: Errors occurred during the execution of \"$executable\""
+fi 
+
+echo -e "\n$0: Copying result files from $remotehost to $HOSTNAME ... "
+if scp -B -o HostbasedAuthentication=yes -r "$builduser@$remotehost:$jobresults/*" . ; then
+	echo -e "done\n"
+else
+	echo -e "failed!\n"
+fi
+
+ssh -o BatchMode=yes -o HostbasedAuthentication=yes "$builduser@$remotehost" "rm -rf $jobdir"
+                
+                
+exit $returncode
+

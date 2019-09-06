@@ -1,0 +1,67 @@
+# Script to make image without ram disk, then make srec images for download,
+# both flash and non-flash.
+
+# Cross compile location
+export CROSS_COMPILE=ppc_4xx-
+
+make CROSS_COMPILE=ppc_4xx-
+[ $? != 0 ] && exit
+
+# Program to fix s-records
+SRECFIX=../tools/srecfix2
+# Program to convert image to srecords
+ZSREC=../tools/zsrec
+
+# This location must be 8 hex digits.  Start in flash for image.
+BURNLOC=FFF80000
+
+# We get the s-record to use for programming by looking at the object file
+# and determining its size and start.  That creates the program info with
+# the $BURNLOC
+# Get the information using objdump.  This creates an s-record
+IINFO=`${CROSS_COMPILE}objdump u-boot.srec -h`
+I=0
+# The objdump creates .sec1 <len> <start> somewhere in the image.
+for FI in ${IINFO}
+do
+	case "$I" in
+	0)
+		[ $FI = ".sec1" ] && I=1
+		;;
+	1)
+		LEN=$FI
+		I=$((I+1))
+		;;
+	2)
+		START=00200000
+		I=$((I+1))
+		;;
+	esac
+done
+
+# Target file for non-flash image
+TARGETF=/tftpboot/u-boot.mot
+TARGETS=/tftpboot/u-boot.srec
+TARGETB=/tftpboot/u-boot.bin
+
+# relocate to 0x200000
+ppc_4xx-objcopy --gap-fill=0xff -O srec --change-address=0x00280000 u-boot u-boot1.srec
+
+SREC=`echo 00100090${START}${BURNLOC}${LEN}`
+# Build the image.  Do burner second so its start record is used.
+# Manually tell srecfix to use program record at 0x00100090.
+# Insert our new srecord.
+${SRECFIX} 001000800010009000000000 ${SREC} <burner.mot >${TARGETF}
+${SRECFIX} -n  <u-boot1.srec >>${TARGETF}
+chmod og+w ${TARGETF}
+echo
+echo
+echo "Created ${TARGETF} (flash code at ${BURNLOC}, executes at 00100000 )"
+
+cp u-boot.srec ${TARGETS}
+chmod og+w ${TARGETS}
+echo "Created ${TARGETS} (flash code at ${BURNLOC})"
+
+cp u-boot.bin ${TARGETB}
+chmod og+w ${TARGETB}
+echo "Created ${TARGETB} (flash code at ${BURNLOC}, image size ${LEN})"

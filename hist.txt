@@ -1,0 +1,85 @@
+EPROM TC16 History File
+
+
+Rel.      Date       KZ     CD  Comment
+----------------------------------------------------------------
+Bringup versionen
+	x3.00.00   25.jan.2006 Isko
+		Back to one load (remove start-big.s a.s)
+		preversion for u-boot
+	x3.00.01   02.feb.2006 Isko
+		   Bootloader with u-boot
+	x3.00.02   07.feb.2006 Isko
+		   env_ptr, saveenv
+	uboot-tc18_008.tar.bz2   27.apr.2006 Isko flash,pci.net ok
+Official version
+3.00.00 03.may.2006 Isko
+	CVS-Tag:TC_30000 first official version:
+		+ flash ok
+		+ pci ok
+		+ RAM ok
+		+ go for diag ok
+
+		- ethernet 1 nicht ok
+		- tftp instabil
+
+3.00.01 04.may.2006 Isko
+	Clean from unneeded traces    CONFIG_TCL1 for CONFIG:TC16 + CONFIG_TC18
+
+3.00.02 04.may.2006 Isko
+	changes init sequence for lcd
+
+3.00.03 04.may.2006 Isko
+	actived ddram test, move get_version, change lcd_button
+
+3.00.04 11.may.2006 Isko
+	version in normal form, reset ok, loads echho turn off
+3.00.05 11.may.2006 Isko
+	testdram_skip,eth1 ok
+3.00.06 12.jun.2006 Isko
+        increase size of command line buffer and environment, change show version on LCD
+3.00.07 14.jun.2006 Isko
+	no set default ethaddr..., tesdram new flag
+3.00.08 10.jul.2006 Isko
+	empty command for comment with #
+	Implement DSP JTAG initialization in UBOOT
+3.01.00 12.jul.2006 Isko
+	changes  bootm for tc18 , show boot process , clear dram
+3.01.01 07.aug.2006 Isko
+       	change calculate DDR ConfigValue TR1(solved "Boot step 2" problem),
+	init winbond,
+	FE12948:remove trace msg. "Images error run diagnostics"
+3.01.02 10.aug.2006 Isko
+       	check flash address in bootcmd env.var ( for no use old LSD),
+	correct use command with # (no show usage)
+	udelay in lcd.c
+	show dbsr,tsr"
+3.01.03 10.aug.2006 Isko
+	support of multiple environment:
+	-create ext_saveenv
+	- check&choose environment in boot
+	-check environment timestamp
+	export crc32 for tt06
+3.02.00 16.aug.2006 Isko
+	- remove bugs from env_init (_timestamp found in 0 pos.)
+	- message after successfuly save_env
+	- export gunzip
+3.02.01 12.sept.2006 Isko
+	move clear timer exception reg. to after show this
+3.02.02 01.oct.2006 Isko
+	FE:13036
+
+
+
+
+CD - Backups:
+=============
+
+2.04.00 -> 2011-05-09 
+	1st build on buildserver
+
+3.03.00 -> 2011-05-09 
+	1st build on buildcentral
+
+3.03.01 -> 2011-05-09 
+	correct set number of version

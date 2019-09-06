@@ -1,0 +1,273 @@
+#!/bin/bash 
+#
+#
+# Build script for linux-module $modulename
+# Should be running on linux machines only.
+#
+
+# The following parameter decides which SVN action is performed.
+# Since the linux project is very large, a complete checkout or export may be too
+# much time consuming to be executed at each build. Therefore, the update command
+# may be used as well, provided that a completele checkout of the project is available
+# in the home directory.
+#
+# Possible values:
+#   checkout: performs a fresh checkout, which will be available for updating later
+#   export:   performs an export; no update possible since no SVN files are generated
+#   update:   updates the existing working copy to the repository
+#   skip:     completely skip the SVN part and continue with the building part
+
+SVN_ACTION=export
+
+revision2checkout="$1"
+version2create="$2"
+
+# Project directory in SVN is the parent dir of the current dir
+
+# Repository URL to which this file corresponds
+Keyword_URL='$HeadURL$'
+
+# Current Revision of THIS file; If HEAD for this file, project HEAD may be greater
+# TODO: We should check this! 
+# In order to check out an arbitratry revision, we have to know which revision 
+# the user typed in the web interface.
+Keyword_Revision='$Revision$'
+
+# Strip keyword name and $ sign from the filename keyword
+File_URL=${Keyword_URL#*HeadURL: }
+File_URL=${File_URL% $}
+
+# Extract the Project URL in the repository from the file URL
+# Assumption: This file is located in the 'build' directory,
+# which is a subdirectory of the project directory.
+Project_URL=${File_URL/\/build*/}
+modulename=${Project_URL##*/}
+
+# Extract the Revision number
+Revision=${Keyword_Revision#*Revision: }
+Revision=${Revision% $}
+
+# Logfile name
+localdir=$(dirname $(which $0))
+logfile="$localdir/$modulename.$(basename $0).log"
+svnlog="$localdir/$modulename.svn.log"
+configlog="$localdir/$modulename.config.log"
+buildlog="$localdir/$modulename.build.log"
+
+
+# Auth. parameters
+svnuser="at01.svc_autobuildro"
+svnpassword="OpIs-13.30"
+
+
+
+# Quit function for exiting with a return value and nice output
+function quit
+{
+	echo -e "\n$0: Exiting with exit status $(($1))"
+	echo -e "Time: $(date)\n"
+	sleep 1
+	test -n "$configmonitor" && kill $configmonitor
+	test -n "$buildmonitor" && kill $buildmonitor
+	test -n "$svnmonitor" && kill $svnmonitor
+	kill $monitor
+	if [ -z "$@" ] ; then
+		exit 16
+	else
+		exit $1
+	fi
+}                                                              
+
+# Execute the quit function if someone kills the process
+trap quit SIGHUP SIGQUIT SIGTERM SIGABRT
+
+
+# Logfile and monitoring
+touch $logfile
+tail -f -n 0 $logfile &
+monitor=$!
+sleep 1
+exec 3>&1 4>&2
+exec 1>>$logfile 2>>$logfile
+if ! terminal=$(tty) ; then
+	terminal=""
+fi
+
+
+# Default values for checkout revision and version
+if [ -z "$revision2checkout" ] ; then
+	revision2checkout="HEAD"
+fi
+
+if [ -z "$version2create" ] ; then
+	version2create="0.00.00"
+fi
+majorversion=${version2create%%.*}
+if [ $((majorversion)) -eq 0 ] ; then
+	testversion=1
+else
+	testversion=0
+fi
+
+
+# Prolog
+echo -e "\n$0: This is the build script for module: $modulename\n"
+
+echo "System Information:"
+echo "Host:     $(hostname)"
+if test -z "$USERDNSDOMAIN" ; then
+	USERDNSDOMAIN=$(dnsdomainname)
+fi
+echo "Domain:   $USERDNSDOMAIN"
+echo "OSTYPE:   $OSTYPE"
+echo "MachType: $MACHTYPE"
+if test -z "$USERNAME" ; then
+	USERNAME=$USER
+fi
+echo "User:     $USERNAME"
+echo -e "Terminal: $terminal\n"
+
+
+if [ "$File_URL" = "$Project_URL" ] ; then
+	echo "Error: could not determine project directory"
+	echo "Current file ($0) should be located in the subdirectory 'build'"
+	echo "This file has been checked out from:"
+	echo "   $File_URL"
+	quit 1
+fi
+
+
+# The real work starts here
+
+cd ~
+echo "Starting checkout and build: $(date)" 
+echo -e "SVN action = $SVN_ACTION\n" 
+
+if [ -d "$modulename" ] ; then
+	case $SVN_ACTION in 
+	export | checkout )
+		echo "Removing existing directory $modulename"
+		rm -rf "$modulename"
+		;;
+	update )
+		echo "Preparing existing directory $modulename for update (revert)"
+		svn revert  --username $svnuser --password $svnpassword --no-auth-cache --recursive $modulename
+		;;
+	esac
+fi
+
+if [ $SVN_ACTION != skip ] ; then
+	echo "Project $SVN_ACTION from SVN repository" 
+	echo "URL:       $Project_URL"          
+    echo -e "Revision:  $revision2checkout\n  ...\n  ..."                     
+
+	rm -f $svnlog
+	# Create process for displaying checkout progress if started interactively
+	if [ -n "$terminal" ] ; then
+		touch $svnlog
+		tail -f $svnlog -n 1 -s 0.5 >&3 &
+		svnmonitor=$!
+	fi
+
+	case $SVN_ACTION in
+	export | checkout )
+		svn $SVN_ACTION -r $revision2checkout $Project_URL --username $svnuser --password $svnpassword --no-auth-cache --non-interactive >>$svnlog 2>>$svnlog
+		svnresult=$?
+		;;
+	update )
+		svn $SVN_ACTION -r $revision2checkout $modulename --username $svnuser --password $svnpassword --no-auth-cache --non-interactive >>$svnlog 2>>$svnlog
+		svnresult=$?
+		;;
+	esac
+
+	if [ "$svnresult" = 0 ] ; then
+		tail -n 3 $svnlog
+		echo -e "Successfull\n"
+	else
+		tail -n 30 $svnlog
+		echo -e "Failed!\n"
+		quit 2
+	fi 
+else
+	echo -e "\n --- WARNING: Skipping export/checkout/update from SVN ---"
+	echo -e "     Project may not be up to date with the repository!\n"
+fi
+
+cd $modulename 
+if [ $? = 0 ] ; then
+	echo -e "Changed directory to $(pwd)\n"
+else
+	echo -e "Failed to move into directory ~/$modulename\n"
+	quit 3
+fi
+
+# Execute a script to rename some file with modified names in SVN
+build/rename_svn2linux.sh
+
+echo -e "\nConfiguring for uboot"
+export ARCH=ppc
+export CROSS_COMPILE=ppc_4xx-
+
+rm -f $configlog
+# Create process for displaying build progress if started from a terminal
+if [ -n "$terminal" ] ; then
+	touch $configlog
+	tail -f $configlog -n 1 -s 0.5 >&3 &
+	configmonitor=$!
+fi
+
+echo -e "Building module $modulename version $version2create\n..."
+# Edit version string in makefile
+sed -i -e "{ s/#define VERSION .*$/#define VERSION \"$version2create\"/ }" include/configs/tc18.h
+
+rm -f $buildlog
+# Create process for displaying build progress if started from a terminal
+if  [ -n "$terminal" ] ; then
+	touch $buildlog
+	tail -f $buildlog -n 1 -s 0.5 >&3 &
+	buildmonitor=$!
+fi
+
+# for tc16 , but this not supported
+# if ./MAKEALL tc16 >>$buildlog 2>>$buildlog ; then
+
+if ./MAKEALL tc18 >>$buildlog 2>>$buildlog ; then
+	tail -n 10 $buildlog
+	echo -e "Building $modulename was successfull\n" 
+	makeresult=0
+else
+	tail -n 10 $buildlog
+	echo -e "Errors occurred during building $modulename"
+	echo -e "See file $(basename $buildlog) for the complete report\n"
+	makeresult=5
+fi
+
+echo "Exporting results"
+resultdir="$localdir/results"
+rm -rf $resultdir
+mkdir -p $resultdir/$modulename
+
+if [ -d $resultdir ] ; then
+	exportres=0
+	cp -v $logfile $resultdir || exportres=8
+	cp -v $svnlog $configlog $buildlog $resultdir
+	mkdir $resultdir/export || exportres=8
+	cp -v u-boot.bin $resultdir/export/ || exportres=8
+	if [ ! "$testversion" = 1 ] ; then
+		echo "Commit "
+		echo "Creating archive..."
+		make clean
+	fi
+else
+	exportres=8
+fi
+if [ $exportres -eq 0 ] ; then
+	echo -e "Successfull\n"
+else
+	echo -e "Export failed for some or all files!\n"
+fi
+
+makeresult=$((makeresult + exportres))
+
+quit $makeresult
+
